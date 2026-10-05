@@ -63,7 +63,7 @@ with st.expander("📋 Project Overview", expanded=True):
 # PROJECT FOLDER
 # ============================================================
 
-PROJECT_FOLDER = Path("C:\Users\bhara\Desktop\stock market analysis").parent
+PROJECT_FOLDER = Path(__file__).parent
 
 
 # ============================================================
