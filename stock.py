@@ -3,75 +3,32 @@ import pandas as pd
 import plotly.express as px
 from pathlib import Path
 
-
-# ============================================================
-# PAGE CONFIG
-# ============================================================
-
 st.set_page_config(
     page_title="Stock Market Analysis Dashboard",
     page_icon="📈",
     layout="wide"
 )
 
-
-# ============================================================
-# TITLE
-# ============================================================
-
 st.title("📈 Stock Market Analysis Dashboard")
-
 st.write(
     "Analyze historical stock prices, compare companies, "
     "identify market trends, and generate business insights."
 )
 
-
 # ============================================================
-# PROJECT OVERVIEW
+# FOLDER
 # ============================================================
 
-with st.expander("📋 Project Overview", expanded=True):
+BASE_DIR = Path(__file__).resolve().parent
 
-    st.markdown("""
-    ### Stock Market Analysis
-
-    This project analyzes historical stock market data for
-    six companies using Python, Pandas, Plotly and Streamlit.
-
-    **Companies:**
-
-    - Bajaj Auto
-    - Eicher Motors
-    - Hero Motocorp
-    - Infosys
-    - TCS
-    - TVS Motors
-
-    **Objectives:**
-
-    - Analyze historical stock prices
-    - Compare company performance
-    - Analyze daily returns
-    - Identify highest and lowest prices
-    - Identify best-performing companies
-    - Generate business recommendations
-    """)
+st.write(f"📂 **Dashboard folder:** `{BASE_DIR}`")
 
 
 # ============================================================
-# PROJECT FOLDER
+# FILES
 # ============================================================
 
-PROJECT_FOLDER = Path("c:\\Users\\bhara\\Desktop\\stock market analysis").parent
-
-
-# ============================================================
-# IMPORTANT:
-# ONLY THESE SIX FILES WILL BE READ
-# ============================================================
-
-STOCK_FILES = {
+FILES = {
     "Bajaj Auto": "Bajaj Auto.csv",
     "Eicher Motors": "Eicher Motors.csv",
     "Hero Motocorp": "Hero Motocorp.csv",
@@ -82,259 +39,287 @@ STOCK_FILES = {
 
 
 # ============================================================
-# FUNCTION TO FIND DATE COLUMN
+# READ CSV
 # ============================================================
 
-def find_date_column(df):
+def read_csv_file(path):
 
-    possible_columns = [
-        "date",
-        "Date",
-        "DATE",
-        "datetime",
-        "Datetime",
-        "timestamp",
-        "Timestamp",
+    encodings = [
+        "utf-8-sig",
+        "utf-8",
+        "cp1252",
+        "latin1",
+        "utf-16"
     ]
 
-    for column in possible_columns:
+    for encoding in encodings:
 
-        if column in df.columns:
-            return column
+        try:
 
-    return None
+            df = pd.read_csv(
+                path,
+                encoding=encoding
+            )
+
+            return df, encoding
+
+        except UnicodeDecodeError:
+            continue
+
+    return None, None
 
 
 # ============================================================
-# FUNCTION TO FIND CLOSE COLUMN
+# FIND COLUMN
 # ============================================================
 
-def find_close_column(df):
+def find_column(df, names):
 
-    possible_columns = [
-        "close",
-        "Close",
-        "CLOSE",
-        "close_price",
-        "Close Price",
-        "closing_price",
-        "Closing Price",
-        "adj_close",
-        "Adj Close",
-        "adjusted_close"
-    ]
+    # Exact match
+    for name in names:
 
-    for column in possible_columns:
+        if name in df.columns:
+            return name
 
-        if column in df.columns:
-            return column
-
-    # Check columns ignoring spaces/capitalization
-
+    # Flexible match
     for column in df.columns:
 
-        clean_column = (
+        clean = (
             str(column)
             .strip()
             .lower()
             .replace(" ", "_")
         )
 
-        if clean_column in [
-            "close",
-            "close_price",
-            "closing_price",
-            "adj_close",
-            "adjusted_close"
-        ]:
+        if clean in names:
             return column
 
     return None
 
 
 # ============================================================
-# LOAD ONLY STOCK DATA
+# LOAD DATA
 # ============================================================
 
 @st.cache_data
-def load_stock_data():
+def load_data():
 
-    all_data = []
+    data = []
+    messages = []
 
-    for company, filename in STOCK_FILES.items():
+    for company, filename in FILES.items():
 
-        file_path = PROJECT_FOLDER / filename
+        path = BASE_DIR / filename
 
-        # ----------------------------------------------------
-        # If file doesn't exist, silently skip it
-        # ----------------------------------------------------
+        # Check file
+        if not path.exists():
 
-        if not file_path.exists():
+            messages.append(
+                f"❌ {company}: File not found"
+            )
+
             continue
 
-        try:
+        # Read file
+        df, encoding = read_csv_file(path)
 
-            df = pd.read_csv(
-                file_path,
-                encoding="utf-8-sig"
+        if df is None:
+
+            messages.append(
+                f"❌ {company}: Could not read CSV"
             )
 
-            if df.empty:
-                continue
+            continue
 
-            # Clean column names
-            df.columns = (
-                df.columns
-                .astype(str)
-                .str.strip()
-            )
+        # Clean column names
+        df.columns = (
+            df.columns
+            .astype(str)
+            .str.strip()
+            .str.replace("\ufeff", "", regex=False)
+        )
 
-            # Find date and close columns
-            date_column = find_date_column(df)
-            close_column = find_close_column(df)
-
-            # If columns are missing, silently skip
-            if date_column is None or close_column is None:
-                continue
-
-            # ------------------------------------------------
-            # DATE
-            # ------------------------------------------------
-
-            df["Date"] = pd.to_datetime(
-                df[date_column],
-                errors="coerce"
-            )
-
-            # ------------------------------------------------
-            # CLOSE PRICE
-            # ------------------------------------------------
-
-            df["Close"] = pd.to_numeric(
-                df[close_column]
-                .astype(str)
-                .str.replace(",", "", regex=False)
-                .str.replace("₹", "", regex=False)
-                .str.replace("$", "", regex=False)
-                .str.strip(),
-                errors="coerce"
-            )
-
-            # Company name
-            df["Company"] = company
-
-            # Remove invalid rows
-            df = df.dropna(
-                subset=["Date", "Close"]
-            )
-
-            if df.empty:
-                continue
-
-            # Keep required columns
-            df = df[
-                [
-                    "Date",
-                    "Close",
-                    "Company"
-                ]
+        # Find Date
+        date_col = find_column(
+            df,
+            [
+                "date",
+                "datetime",
+                "timestamp",
+                "date_time"
             ]
+        )
 
-            all_data.append(df)
+        # Find Close
+        close_col = find_column(
+            df,
+            [
+                "close",
+                "close_price",
+                "closing_price",
+                "adj_close",
+                "adjusted_close"
+            ]
+        )
 
-        except Exception:
-            # Do NOT show warning for unrelated files
+        # Check Date
+        if date_col is None:
+
+            messages.append(
+                f"❌ {company}: Date column not found. "
+                f"Columns = {list(df.columns)}"
+            )
+
             continue
 
-    # --------------------------------------------------------
-    # COMBINE DATA
-    # --------------------------------------------------------
+        # Check Close
+        if close_col is None:
 
-    if not all_data:
-        return pd.DataFrame()
+            messages.append(
+                f"❌ {company}: Close column not found. "
+                f"Columns = {list(df.columns)}"
+            )
 
-    final_df = pd.concat(
-        all_data,
+            continue
+
+        # Convert Date
+        df["Date"] = pd.to_datetime(
+            df[date_col],
+            errors="coerce"
+        )
+
+        # Convert Close
+        df["Close"] = pd.to_numeric(
+            df[close_col]
+            .astype(str)
+            .str.replace(",", "", regex=False)
+            .str.replace("₹", "", regex=False)
+            .str.replace("$", "", regex=False)
+            .str.strip(),
+            errors="coerce"
+        )
+
+        # Company
+        df["Company"] = company
+
+        # Remove invalid rows
+        df = df.dropna(
+            subset=["Date", "Close"]
+        )
+
+        if df.empty:
+
+            messages.append(
+                f"❌ {company}: No valid Date/Close data"
+            )
+
+            continue
+
+        # Keep columns
+        df = df[
+            [
+                "Date",
+                "Close",
+                "Company"
+            ]
+        ]
+
+        data.append(df)
+
+        messages.append(
+            f"✅ {company}: Loaded successfully "
+            f"using {encoding}"
+        )
+
+    if not data:
+
+        return pd.DataFrame(), messages
+
+    final = pd.concat(
+        data,
         ignore_index=True
     )
 
-    # Sort
-    final_df = final_df.sort_values(
+    final = final.sort_values(
         ["Company", "Date"]
     )
 
-    # --------------------------------------------------------
-    # DAILY RETURN
-    # --------------------------------------------------------
-
-    final_df["Daily_Return"] = (
-        final_df
+    # Daily return
+    final["Daily_Return"] = (
+        final
         .groupby("Company")["Close"]
         .pct_change()
         * 100
     )
 
-    return final_df
+    return final, messages
 
 
 # ============================================================
-# LOAD DATA
+# LOAD
 # ============================================================
 
-df = load_stock_data()
+df, messages = load_data()
 
 
 # ============================================================
-# NO DATA MESSAGE
+# DEBUG INFORMATION
+# ============================================================
+
+with st.expander(
+    "📂 Data Loading Details",
+    expanded=True
+):
+
+    for message in messages:
+
+        if message.startswith("✅"):
+            st.success(message)
+        else:
+            st.error(message)
+
+
+# ============================================================
+# STOP IF NO DATA
 # ============================================================
 
 if df.empty:
 
     st.error("❌ No stock data could be loaded.")
 
-    st.info("""
-    Please check that these files are in the same folder as
-    stock.py:
-
-    • Bajaj Auto.csv
-    • Eicher Motors.csv
-    • Hero Motocorp.csv
-    • Infosys.csv
-    • TCS.csv
-    • TVS Motors.csv
-
-    Each CSV should contain a Date column and a Close column.
-    """)
+    st.info(
+        "The CSV files were found, but their Date/Close "
+        "columns could not be read."
+    )
 
     st.stop()
 
 
 # ============================================================
-# SIDEBAR FILTERS
+# SIDEBAR
 # ============================================================
 
 st.sidebar.header("🔎 Filters")
 
-
-# Company filter
-
-company_list = sorted(
+companies = sorted(
     df["Company"].unique()
 )
 
 selected_companies = st.sidebar.multiselect(
     "Select Companies",
-    company_list,
-    default=company_list
+    companies,
+    default=companies
 )
 
 
-# Date filter
+# ============================================================
+# DATE FILTER
+# ============================================================
 
 min_date = df["Date"].min().date()
 max_date = df["Date"].max().date()
 
-selected_dates = st.sidebar.date_input(
+date_range = st.sidebar.date_input(
     "Select Date Range",
     value=(min_date, max_date),
     min_value=min_date,
@@ -343,103 +328,61 @@ selected_dates = st.sidebar.date_input(
 
 
 # ============================================================
-# APPLY FILTERS
+# FILTER
 # ============================================================
 
-filtered_df = df[
+filtered = df[
     df["Company"].isin(selected_companies)
 ].copy()
 
+if len(date_range) == 2:
 
-if len(selected_dates) == 2:
-
-    start_date = selected_dates[0]
-    end_date = selected_dates[1]
-
-    filtered_df = filtered_df[
-        (
-            filtered_df["Date"].dt.date
-            >= start_date
-        )
-        &
-        (
-            filtered_df["Date"].dt.date
-            <= end_date
-        )
+    filtered = filtered[
+        (filtered["Date"].dt.date >= date_range[0]) &
+        (filtered["Date"].dt.date <= date_range[1])
     ]
 
 
-# ============================================================
-# CHECK FILTERED DATA
-# ============================================================
-
-if filtered_df.empty:
+if filtered.empty:
 
     st.warning(
-        "No data available for the selected filters."
+        "No data available for selected filters."
     )
 
     st.stop()
 
 
 # ============================================================
-# KPI CALCULATIONS
-# ============================================================
-
-total_companies = filtered_df[
-    "Company"
-].nunique()
-
-total_records = len(filtered_df)
-
-average_price = filtered_df[
-    "Close"
-].mean()
-
-highest_price = filtered_df[
-    "Close"
-].max()
-
-lowest_price = filtered_df[
-    "Close"
-].min()
-
-average_return = filtered_df[
-    "Daily_Return"
-].mean()
-
-
-# ============================================================
-# KPI CARDS
+# KPIs
 # ============================================================
 
 st.subheader("📊 Key Performance Indicators")
 
-kpi1, kpi2, kpi3, kpi4, kpi5 = st.columns(5)
+c1, c2, c3, c4, c5 = st.columns(5)
 
-kpi1.metric(
+c1.metric(
     "🏢 Companies",
-    total_companies
+    filtered["Company"].nunique()
 )
 
-kpi2.metric(
+c2.metric(
     "📋 Records",
-    f"{total_records:,}"
+    f"{len(filtered):,}"
 )
 
-kpi3.metric(
+c3.metric(
     "💰 Average Price",
-    f"₹{average_price:,.2f}"
+    f"₹{filtered['Close'].mean():,.2f}"
 )
 
-kpi4.metric(
+c4.metric(
     "⬆️ Highest Price",
-    f"₹{highest_price:,.2f}"
+    f"₹{filtered['Close'].max():,.2f}"
 )
 
-kpi5.metric(
+c5.metric(
     "📈 Avg Daily Return",
-    f"{average_return:.2f}%"
+    f"{filtered['Daily_Return'].mean():.2f}%"
 )
 
 
@@ -448,80 +391,69 @@ st.divider()
 
 # ============================================================
 # CHART 1
-# HISTORICAL STOCK PRICE
 # ============================================================
 
 st.subheader("📈 Historical Stock Price Trend")
 
-price_chart = px.line(
-    filtered_df.sort_values("Date"),
+fig1 = px.line(
+    filtered.sort_values("Date"),
     x="Date",
     y="Close",
     color="Company",
-    title="Historical Closing Price",
-    markers=False
+    title="Historical Closing Price"
 )
 
-price_chart.update_layout(
+fig1.update_layout(
     hovermode="x unified"
 )
 
 st.plotly_chart(
-    price_chart,
+    fig1,
     use_container_width=True
 )
 
 
 # ============================================================
-# COMPANY PERFORMANCE CALCULATION
+# PERFORMANCE
 # ============================================================
 
-performance_list = []
+performance = []
 
-for company in filtered_df["Company"].unique():
+for company in filtered["Company"].unique():
 
-    company_df = (
-        filtered_df[
-            filtered_df["Company"] == company
+    temp = (
+        filtered[
+            filtered["Company"] == company
         ]
         .sort_values("Date")
     )
 
-    if len(company_df) < 2:
+    if len(temp) < 2:
         continue
 
-    starting_price = company_df[
-        "Close"
-    ].iloc[0]
+    first = temp["Close"].iloc[0]
+    last = temp["Close"].iloc[-1]
 
-    ending_price = company_df[
-        "Close"
-    ].iloc[-1]
+    if first == 0:
+        continue
 
-    return_percentage = (
-        (
-            ending_price - starting_price
-        )
-        / starting_price
-        * 100
-    )
+    return_pct = (
+        (last - first) / first
+    ) * 100
 
-    performance_list.append({
+    performance.append({
         "Company": company,
-        "Starting Price": starting_price,
-        "Latest Price": ending_price,
-        "Return (%)": return_percentage
+        "Starting Price": first,
+        "Latest Price": last,
+        "Return (%)": return_pct
     })
 
 
-performance_df = pd.DataFrame(
-    performance_list
-)
+performance_df = pd.DataFrame(performance)
 
 
 # ============================================================
 # CHART 2
-# COMPANY PERFORMANCE
 # ============================================================
 
 st.subheader("🏆 Company Performance Comparison")
@@ -533,72 +465,65 @@ if not performance_df.empty:
         ascending=False
     )
 
-    performance_chart = px.bar(
+    fig2 = px.bar(
         performance_df,
         x="Company",
         y="Return (%)",
         color="Company",
-        title="Stock Return by Company",
-        text_auto=".2f"
+        text_auto=".2f",
+        title="Stock Return by Company"
     )
 
     st.plotly_chart(
-        performance_chart,
+        fig2,
         use_container_width=True
     )
 
 
 # ============================================================
 # CHART 3
-# DAILY RETURNS
 # ============================================================
 
 st.subheader("📉 Daily Return Analysis")
 
-return_chart = px.line(
-    filtered_df.sort_values("Date"),
+fig3 = px.line(
+    filtered.sort_values("Date"),
     x="Date",
     y="Daily_Return",
     color="Company",
     title="Daily Stock Returns (%)"
 )
 
-return_chart.update_layout(
+fig3.update_layout(
     hovermode="x unified"
 )
 
 st.plotly_chart(
-    return_chart,
+    fig3,
     use_container_width=True
 )
 
 
 # ============================================================
-# LATEST PRICE TABLE
+# LATEST PRICES
 # ============================================================
 
 st.subheader("💰 Latest Stock Prices")
 
-latest_prices = (
-    filtered_df
+latest = (
+    filtered
     .sort_values("Date")
     .groupby("Company")
     .tail(1)
-)
-
-latest_prices = latest_prices[
-    [
-        "Company",
-        "Date",
-        "Close"
-    ]
-].sort_values(
-    "Close",
-    ascending=False
+    [["Company", "Date", "Close"]]
+    .sort_values(
+        "Close",
+        ascending=False
+    )
 )
 
 st.dataframe(
-    latest_prices,
+    latest,
     use_container_width=True,
     hide_index=True
 )
@@ -606,22 +531,21 @@ st.dataframe(
 
 # ============================================================
 # CHART 4
-# LATEST PRICE COMPARISON
 # ============================================================
 
 st.subheader("📊 Latest Price Comparison")
 
-latest_chart = px.bar(
-    latest_prices,
+fig4 = px.bar(
+    latest,
     x="Company",
     y="Close",
     color="Company",
-    title="Latest Closing Price",
-    text_auto=".2f"
+    text_auto=".2f",
+    title="Latest Closing Price"
 )
 
 st.plotly_chart(
-    latest_chart,
+    fig4,
     use_container_width=True
 )
 
@@ -632,8 +556,8 @@ st.plotly_chart(
 
 st.subheader("📋 Company Summary")
 
-summary_df = (
-    filtered_df
+summary = (
+    filtered
     .groupby("Company")
     .agg(
         First_Date=("Date", "min"),
@@ -647,26 +571,23 @@ summary_df = (
     .reset_index()
 )
 
-summary_df = summary_df.round(2)
-
 st.dataframe(
-    summary_df,
+    summary.round(2),
     use_container_width=True,
     hide_index=True
 )
 
 
 # ============================================================
-# PERFORMANCE HIGHLIGHTS
+# HIGHLIGHTS
 # ============================================================
 
 if not performance_df.empty:
 
     st.subheader("🏆 Performance Highlights")
 
-    best_company = performance_df.iloc[0]
-
-    worst_company = performance_df.iloc[-1]
+    best = performance_df.iloc[0]
+    worst = performance_df.iloc[-1]
 
     col1, col2 = st.columns(2)
 
@@ -676,9 +597,9 @@ if not performance_df.empty:
             f"""
             🥇 **Best Performing Company**
 
-            **{best_company['Company']}**
+            **{best['Company']}**
 
-            Return: **{best_company['Return (%)']:.2f}%**
+            Return: **{best['Return (%)']:.2f}%**
             """
         )
 
@@ -688,9 +609,9 @@ if not performance_df.empty:
             f"""
             📉 **Lowest Performing Company**
 
-            **{worst_company['Company']}**
+            **{worst['Company']}**
 
-            Return: **{worst_company['Return (%)']:.2f}%**
+            Return: **{worst['Return (%)']:.2f}%**
             """
         )
 
@@ -703,45 +624,39 @@ st.subheader("🔍 Key Insights")
 
 if not performance_df.empty:
 
-    positive_companies = len(
-        performance_df[
-            performance_df["Return (%)"] > 0
-        ]
-    )
+    positive = (
+        performance_df["Return (%)"] > 0
+    ).sum()
 
-    negative_companies = len(
-        performance_df[
-            performance_df["Return (%)"] < 0
-        ]
-    )
+    negative = (
+        performance_df["Return (%)"] < 0
+    ).sum()
 
-    average_company_return = (
+    average_return = (
         performance_df["Return (%)"].mean()
     )
 
     st.write(
-        f"• **{positive_companies}** selected companies "
-        "show a positive return."
+        f"• **{positive}** companies show positive returns."
     )
 
     st.write(
-        f"• **{negative_companies}** selected companies "
-        "show a negative return."
+        f"• **{negative}** companies show negative returns."
     )
 
     st.write(
-        f"• Average company return is "
-        f"**{average_company_return:.2f}%**."
+        f"• Average company return: "
+        f"**{average_return:.2f}%**."
     )
 
     st.write(
-        f"• Best performer is **{best_company['Company']}** "
-        f"with **{best_company['Return (%)']:.2f}%** return."
+        f"• Best performer: **{best['Company']}** "
+        f"with **{best['Return (%)']:.2f}%**."
     )
 
     st.write(
-        f"• Lowest performer is **{worst_company['Company']}** "
-        f"with **{worst_company['Return (%)']:.2f}%** return."
+        f"• Lowest performer: **{worst['Company']}** "
+        f"with **{worst['Return (%)']:.2f}%**."
     )
 
 
@@ -753,32 +668,28 @@ st.subheader("💡 Business Recommendations")
 
 st.markdown("""
 ### 1. Monitor high-performing companies
-Companies with strong positive returns can be analyzed
-further for investment and business performance factors.
+Track companies showing strong positive returns.
 
 ### 2. Investigate underperforming companies
-Companies with negative returns should be investigated for
-possible market, industry and company-specific factors.
+Analyze companies showing negative returns and identify
+possible market or company-specific reasons.
 
-### 3. Monitor stock volatility
-Daily returns should be monitored to understand price
-fluctuations and potential risk.
+### 3. Monitor volatility
+Daily returns can help identify price fluctuations and risk.
 
 ### 4. Diversify
-Comparing multiple companies can help reduce dependence
-on a single stock.
+Comparing multiple companies can reduce dependence on one stock.
 
 ### 5. Focus on long-term trends
-Long-term price movements provide more meaningful insights
-than individual daily fluctuations.
+Long-term price movements are more useful than individual
+daily fluctuations.
 
 ### 6. Combine stock and financial data
-Stock prices should be analyzed together with revenue,
-profit, EPS, P/E ratio and other financial indicators.
+Combine stock prices with revenue, profit, EPS and P/E ratio
+for deeper analysis.
 
 ### 7. Regular monitoring
-The dashboard can be used to monitor changes in stock
-prices and company performance over time.
+Use the dashboard to monitor changes in stock performance.
 """)
 
 
@@ -788,13 +699,13 @@ prices and company performance over time.
 
 st.subheader("⬇️ Download Filtered Data")
 
-csv_data = filtered_df.to_csv(
+csv = filtered.to_csv(
     index=False
 ).encode("utf-8")
 
 st.download_button(
     "📥 Download CSV",
-    data=csv_data,
+    data=csv,
     file_name="stock_market_analysis_filtered.csv",
     mime="text/csv"
 )
@@ -808,10 +719,10 @@ st.divider()
 
 st.caption(
     "Stock Market Analysis Dashboard | "
-    "Python | Pandas | Streamlit | Plotly"
+    "Python | Pandas | Plotly | Streamlit"
 )
 
 st.caption(
-    "For educational and analytical purposes only. "
+    "For educational purposes only. "
     "This dashboard is not investment advice."
 )
