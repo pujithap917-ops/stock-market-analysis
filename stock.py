@@ -63,13 +63,12 @@ with st.expander("📋 Project Overview", expanded=True):
 # PROJECT FOLDER
 # ============================================================
 
-# Automatically use the folder where stock.py is located
-
-PROJECT_FOLDER = Path(__file__).resolve().parent
+PROJECT_FOLDER = Path("c:\\Users\\bhara\\Desktop\\stock market analysis").parent
 
 
 # ============================================================
-# STOCK FILES
+# IMPORTANT:
+# ONLY THESE SIX FILES WILL BE READ
 # ============================================================
 
 STOCK_FILES = {
@@ -83,77 +82,55 @@ STOCK_FILES = {
 
 
 # ============================================================
-# FIND DATE COLUMN
+# FUNCTION TO FIND DATE COLUMN
 # ============================================================
 
 def find_date_column(df):
 
     possible_columns = [
-        "Date",
         "date",
+        "Date",
         "DATE",
-        "Datetime",
         "datetime",
-        "Timestamp",
+        "Datetime",
         "timestamp",
-        "Date Time",
-        "date_time"
+        "Timestamp",
     ]
 
-    # Exact names
     for column in possible_columns:
 
         if column in df.columns:
-            return column
-
-    # Flexible search
-    for column in df.columns:
-
-        clean_column = (
-            str(column)
-            .strip()
-            .lower()
-            .replace(" ", "_")
-        )
-
-        if clean_column in [
-            "date",
-            "datetime",
-            "timestamp",
-            "date_time"
-        ]:
             return column
 
     return None
 
 
 # ============================================================
-# FIND CLOSE COLUMN
+# FUNCTION TO FIND CLOSE COLUMN
 # ============================================================
 
 def find_close_column(df):
 
     possible_columns = [
-        "Close",
         "close",
+        "Close",
         "CLOSE",
-        "Close Price",
         "close_price",
-        "Closing Price",
+        "Close Price",
         "closing_price",
-        "Adj Close",
+        "Closing Price",
         "adj_close",
-        "Adjusted Close",
+        "Adj Close",
         "adjusted_close"
     ]
 
-    # Exact names
     for column in possible_columns:
 
         if column in df.columns:
             return column
 
-    # Flexible search
+    # Check columns ignoring spaces/capitalization
+
     for column in df.columns:
 
         clean_column = (
@@ -176,147 +153,52 @@ def find_close_column(df):
 
 
 # ============================================================
-# READ CSV WITH MULTIPLE ENCODINGS
-# ============================================================
-
-def read_csv_safely(file_path):
-
-    encodings = [
-        "utf-8-sig",
-        "utf-8",
-        "cp1252",
-        "latin1",
-        "utf-16",
-        "utf-16-le",
-        "utf-16-be"
-    ]
-
-    last_error = None
-
-    for encoding in encodings:
-
-        try:
-
-            df = pd.read_csv(
-                file_path,
-                encoding=encoding
-            )
-
-            return df, encoding
-
-        except (
-            UnicodeDecodeError,
-            UnicodeError
-        ) as error:
-
-            last_error = error
-
-        except Exception as error:
-
-            last_error = error
-
-    raise last_error
-
-
-# ============================================================
-# LOAD STOCK DATA
+# LOAD ONLY STOCK DATA
 # ============================================================
 
 @st.cache_data
 def load_stock_data():
 
     all_data = []
-    problems = []
 
     for company, filename in STOCK_FILES.items():
 
         file_path = PROJECT_FOLDER / filename
 
         # ----------------------------------------------------
-        # FILE CHECK
+        # If file doesn't exist, silently skip it
         # ----------------------------------------------------
 
         if not file_path.exists():
-
-            problems.append(
-                f"❌ {company}: File not found - {filename}"
-            )
-
             continue
 
         try:
 
-            # ------------------------------------------------
-            # READ CSV
-            # ------------------------------------------------
-
-            df, encoding_used = read_csv_safely(
-                file_path
+            df = pd.read_csv(
+                file_path,
+                encoding="utf-8-sig"
             )
 
-            # ------------------------------------------------
-            # CHECK EMPTY
-            # ------------------------------------------------
-
             if df.empty:
-
-                problems.append(
-                    f"❌ {company}: CSV file is empty"
-                )
-
                 continue
 
-            # ------------------------------------------------
-            # CLEAN COLUMN NAMES
-            # ------------------------------------------------
-
+            # Clean column names
             df.columns = (
                 df.columns
                 .astype(str)
                 .str.strip()
-                .str.replace("\ufeff", "", regex=False)
             )
 
-            # ------------------------------------------------
-            # FIND DATE
-            # ------------------------------------------------
-
+            # Find date and close columns
             date_column = find_date_column(df)
-
-            # ------------------------------------------------
-            # FIND CLOSE
-            # ------------------------------------------------
-
             close_column = find_close_column(df)
 
-            # ------------------------------------------------
-            # DATE COLUMN ERROR
-            # ------------------------------------------------
-
-            if date_column is None:
-
-                problems.append(
-                    f"❌ {company}: Date column not found. "
-                    f"Columns found: {list(df.columns)}"
-                )
-
+            # If columns are missing, silently skip
+            if date_column is None or close_column is None:
                 continue
 
             # ------------------------------------------------
-            # CLOSE COLUMN ERROR
-            # ------------------------------------------------
-
-            if close_column is None:
-
-                problems.append(
-                    f"❌ {company}: Close column not found. "
-                    f"Columns found: {list(df.columns)}"
-                )
-
-                continue
-
-            # ------------------------------------------------
-            # CONVERT DATE
+            # DATE
             # ------------------------------------------------
 
             df["Date"] = pd.to_datetime(
@@ -325,7 +207,7 @@ def load_stock_data():
             )
 
             # ------------------------------------------------
-            # CONVERT CLOSE PRICE
+            # CLOSE PRICE
             # ------------------------------------------------
 
             df["Close"] = pd.to_numeric(
@@ -334,42 +216,22 @@ def load_stock_data():
                 .str.replace(",", "", regex=False)
                 .str.replace("₹", "", regex=False)
                 .str.replace("$", "", regex=False)
-                .str.replace("Rs.", "", regex=False)
-                .str.replace("Rs", "", regex=False)
                 .str.strip(),
                 errors="coerce"
             )
 
-            # ------------------------------------------------
-            # COMPANY
-            # ------------------------------------------------
-
+            # Company name
             df["Company"] = company
 
-            # ------------------------------------------------
-            # REMOVE INVALID ROWS
-            # ------------------------------------------------
-
+            # Remove invalid rows
             df = df.dropna(
                 subset=["Date", "Close"]
             )
 
-            # ------------------------------------------------
-            # CHECK VALID DATA
-            # ------------------------------------------------
-
             if df.empty:
-
-                problems.append(
-                    f"❌ {company}: No valid Date/Close records"
-                )
-
                 continue
 
-            # ------------------------------------------------
-            # KEEP REQUIRED COLUMNS
-            # ------------------------------------------------
-
+            # Keep required columns
             df = df[
                 [
                     "Date",
@@ -378,51 +240,32 @@ def load_stock_data():
                 ]
             ]
 
-            # ------------------------------------------------
-            # ADD DATA
-            # ------------------------------------------------
-
             all_data.append(df)
 
-            problems.append(
-                f"✅ {company}: Loaded successfully "
-                f"using {encoding_used}"
-            )
+        except Exception:
+            # Do NOT show warning for unrelated files
+            continue
 
-        except Exception as error:
-
-            problems.append(
-                f"❌ {company}: {str(error)}"
-            )
-
-    # ========================================================
-    # NO DATA
-    # ========================================================
+    # --------------------------------------------------------
+    # COMBINE DATA
+    # --------------------------------------------------------
 
     if not all_data:
-
-        return pd.DataFrame(), problems
-
-    # ========================================================
-    # COMBINE ALL COMPANIES
-    # ========================================================
+        return pd.DataFrame()
 
     final_df = pd.concat(
         all_data,
         ignore_index=True
     )
 
-    # ========================================================
-    # SORT DATA
-    # ========================================================
-
+    # Sort
     final_df = final_df.sort_values(
         ["Company", "Date"]
-    ).reset_index(drop=True)
+    )
 
-    # ========================================================
+    # --------------------------------------------------------
     # DAILY RETURN
-    # ========================================================
+    # --------------------------------------------------------
 
     final_df["Daily_Return"] = (
         final_df
@@ -431,53 +274,27 @@ def load_stock_data():
         * 100
     )
 
-    return final_df, problems
+    return final_df
 
 
 # ============================================================
 # LOAD DATA
 # ============================================================
 
-df, problems = load_stock_data()
+df = load_stock_data()
 
 
 # ============================================================
-# DATA LOADING INFORMATION
-# ============================================================
-
-with st.expander(
-    "📂 Data Loading Details",
-    expanded=False
-):
-
-    st.write(
-        f"**Dashboard folder:** `{PROJECT_FOLDER}`"
-    )
-
-    for problem in problems:
-
-        if problem.startswith("✅"):
-
-            st.success(problem)
-
-        else:
-
-            st.warning(problem)
-
-
-# ============================================================
-# NO DATA ERROR
+# NO DATA MESSAGE
 # ============================================================
 
 if df.empty:
 
-    st.error(
-        "❌ No stock data could be loaded."
-    )
+    st.error("❌ No stock data could be loaded.")
 
     st.info("""
-    Make sure these six files are in the same folder as
-    `stock.py`:
+    Please check that these files are in the same folder as
+    stock.py:
 
     • Bajaj Auto.csv
     • Eicher Motors.csv
@@ -486,7 +303,7 @@ if df.empty:
     • TCS.csv
     • TVS Motors.csv
 
-    The CSV files must contain Date and Close price columns.
+    Each CSV should contain a Date column and a Close column.
     """)
 
     st.stop()
@@ -499,9 +316,7 @@ if df.empty:
 st.sidebar.header("🔎 Filters")
 
 
-# ============================================================
-# COMPANY FILTER
-# ============================================================
+# Company filter
 
 company_list = sorted(
     df["Company"].unique()
@@ -509,14 +324,12 @@ company_list = sorted(
 
 selected_companies = st.sidebar.multiselect(
     "Select Companies",
-    options=company_list,
+    company_list,
     default=company_list
 )
 
 
-# ============================================================
-# DATE FILTER
-# ============================================================
+# Date filter
 
 min_date = df["Date"].min().date()
 max_date = df["Date"].max().date()
@@ -530,17 +343,13 @@ selected_dates = st.sidebar.date_input(
 
 
 # ============================================================
-# APPLY COMPANY FILTER
+# APPLY FILTERS
 # ============================================================
 
 filtered_df = df[
     df["Company"].isin(selected_companies)
 ].copy()
 
-
-# ============================================================
-# APPLY DATE FILTER
-# ============================================================
 
 if len(selected_dates) == 2:
 
@@ -549,23 +358,25 @@ if len(selected_dates) == 2:
 
     filtered_df = filtered_df[
         (
-            filtered_df["Date"].dt.date >= start_date
+            filtered_df["Date"].dt.date
+            >= start_date
         )
         &
         (
-            filtered_df["Date"].dt.date <= end_date
+            filtered_df["Date"].dt.date
+            <= end_date
         )
     ]
 
 
 # ============================================================
-# FILTER CHECK
+# CHECK FILTERED DATA
 # ============================================================
 
 if filtered_df.empty:
 
     st.warning(
-        "⚠️ No data available for the selected filters."
+        "No data available for the selected filters."
     )
 
     st.stop()
@@ -636,7 +447,8 @@ st.divider()
 
 
 # ============================================================
-# CHART 1 - HISTORICAL PRICE
+# CHART 1
+# HISTORICAL STOCK PRICE
 # ============================================================
 
 st.subheader("📈 Historical Stock Price Trend")
@@ -646,7 +458,8 @@ price_chart = px.line(
     x="Date",
     y="Close",
     color="Company",
-    title="Historical Closing Price"
+    title="Historical Closing Price",
+    markers=False
 )
 
 price_chart.update_layout(
@@ -660,7 +473,7 @@ st.plotly_chart(
 
 
 # ============================================================
-# COMPANY PERFORMANCE
+# COMPANY PERFORMANCE CALCULATION
 # ============================================================
 
 performance_list = []
@@ -685,9 +498,6 @@ for company in filtered_df["Company"].unique():
         "Close"
     ].iloc[-1]
 
-    if starting_price == 0:
-        continue
-
     return_percentage = (
         (
             ending_price - starting_price
@@ -710,7 +520,8 @@ performance_df = pd.DataFrame(
 
 
 # ============================================================
-# CHART 2 - COMPANY PERFORMANCE
+# CHART 2
+# COMPANY PERFORMANCE
 # ============================================================
 
 st.subheader("🏆 Company Performance Comparison")
@@ -738,7 +549,8 @@ if not performance_df.empty:
 
 
 # ============================================================
-# CHART 3 - DAILY RETURNS
+# CHART 3
+# DAILY RETURNS
 # ============================================================
 
 st.subheader("📉 Daily Return Analysis")
@@ -762,7 +574,7 @@ st.plotly_chart(
 
 
 # ============================================================
-# LATEST STOCK PRICES
+# LATEST PRICE TABLE
 # ============================================================
 
 st.subheader("💰 Latest Stock Prices")
@@ -785,7 +597,6 @@ latest_prices = latest_prices[
     ascending=False
 )
 
-
 st.dataframe(
     latest_prices,
     use_container_width=True,
@@ -794,7 +605,8 @@ st.dataframe(
 
 
 # ============================================================
-# CHART 4 - LATEST PRICE
+# CHART 4
+# LATEST PRICE COMPARISON
 # ============================================================
 
 st.subheader("📊 Latest Price Comparison")
@@ -853,6 +665,7 @@ if not performance_df.empty:
     st.subheader("🏆 Performance Highlights")
 
     best_company = performance_df.iloc[0]
+
     worst_company = performance_df.iloc[-1]
 
     col1, col2 = st.columns(2)
@@ -941,15 +754,15 @@ st.subheader("💡 Business Recommendations")
 st.markdown("""
 ### 1. Monitor high-performing companies
 Companies with strong positive returns can be analyzed
-further for business and market performance.
+further for investment and business performance factors.
 
 ### 2. Investigate underperforming companies
 Companies with negative returns should be investigated for
-market, industry and company-specific factors.
+possible market, industry and company-specific factors.
 
 ### 3. Monitor stock volatility
-Daily returns can help identify price fluctuations and
-potential market risk.
+Daily returns should be monitored to understand price
+fluctuations and potential risk.
 
 ### 4. Diversify
 Comparing multiple companies can help reduce dependence
@@ -960,17 +773,17 @@ Long-term price movements provide more meaningful insights
 than individual daily fluctuations.
 
 ### 6. Combine stock and financial data
-Stock prices should also be analyzed with revenue, profit,
-EPS, P/E ratio and other financial indicators.
+Stock prices should be analyzed together with revenue,
+profit, EPS, P/E ratio and other financial indicators.
 
 ### 7. Regular monitoring
-The dashboard can be used to monitor stock prices and
-company performance over time.
+The dashboard can be used to monitor changes in stock
+prices and company performance over time.
 """)
 
 
 # ============================================================
-# DOWNLOAD FILTERED DATA
+# DOWNLOAD
 # ============================================================
 
 st.subheader("⬇️ Download Filtered Data")
@@ -980,7 +793,7 @@ csv_data = filtered_df.to_csv(
 ).encode("utf-8")
 
 st.download_button(
-    label="📥 Download CSV",
+    "📥 Download CSV",
     data=csv_data,
     file_name="stock_market_analysis_filtered.csv",
     mime="text/csv"
