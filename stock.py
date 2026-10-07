@@ -290,8 +290,7 @@ df = load_stock_data()
 
 if df.empty:
 
-    st.error("❌ No stock data could be loaded.")
-
+    
     st.info("""
     Please check that these files are in the same folder as
     stock.py:
